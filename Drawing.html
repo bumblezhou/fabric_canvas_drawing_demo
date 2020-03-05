@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="fabric.min.js"></script>
+  <script src="jquery-1.12.4.min.js"></script>
+  <style>
+    body{
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    #img_container{
+      background: gray;
+      width: 100%;
+      height: 100%;
+      min-width: 600px !important;
+      min-height: 400px !important;
+    }
+    img{
+      border: 0px;
+      display: block;
+      margin:auto;
+    }
+    #canvas_container{
+      z-index: 1000;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #buttons_container{
+      width: 100%;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="img_container">
+      <img src="BABDR-Camera-Room-1.jpg">
+      <div id="canvas_container">
+          <canvas id="canvas"></canvas>
+      </div>
+  </div>
+  <div id="buttons_container">
+    <input id="draw_type_line" name="draw_type" type="radio" checked><label for="draw_type_line">Line</label>
+    <input id="draw_type_rect" name="draw_type" type="radio"><label for="draw_type_rect">Rectangle</label>
+    <input id="draw_type_poly" name="draw_type" type="radio"><label for="draw_type_poly">Polygon</label>
+    <input id="draw_type_revrs_rect" name="draw_type" type="radio"><label for="draw_type_revrs_rect">Reverse Rectangle</label>
+    <input id="draw_type_revrs_poly" name="draw_type" type="radio"><label for="draw_type_revrs_poly">Reverse Polygon</label>
+    <input id="btn_clear" name="btn_clear" value="Clear" type="button" />
+    <input id="btn_select" name="btn_select" value="Drawing" type="button" />
+  </div>
+  
+  <script>
+    var ds = new function () {
+      this.opts = {
+        min: 99,
+        max: 999999,
+        pointArray: new Array(),
+        lineArray: new Array(),
+        shapeArray: new Array(),
+        tempLine: null,
+        tempRect: null,
+        canvas: null,
+        //drawType: draw_type_line, draw_type_rect, draw_type_poly, draw_type_revrs_rect, draw_type_revrs_poly
+        drawType: "draw_type_line",
+        colors:["#FFFFFF", "#007FFF", "#009F5F", "#FF5F00", "#FFFF00", "#00FFFF", "#7F00FF", "#FF00FF"],
+        currentColor: null,
+        isMouseDown: false
+      },
+      this.initCanvas = function () {
+        $("#canvas_container").height($("#img_container img").height());
+        $("#canvas_container").width($("#img_container img").width());
+        $("#canvas_container").css("left", (($("#img_container").width() - $("#img_container img").width()) / 2));
+
+        $("#canvas").attr("width", $("#canvas_container").width() + "px");
+        $("#canvas").attr("height", $("#canvas_container").height() + "px");
+      
+        this.opts.canvas = window._canvas = new fabric.Canvas('canvas');
+
+        $("#buttons_container input[type='radio']").change(function(){
+          ds.opts.drawType = $("input[type='radio']:checked").attr("id");
+          $("#btn_select").val("Select");
+          ds.preDrawing();
+        });
+
+        $("#btn_clear").click(function(){
+          ds.opts.canvas.clear();
+          ds.opts.shapeArray = new Array();
+          $("#btn_select").val("Select");
+          ds.preDrawing();
+        });
+
+        $("#btn_select").click(function(){
+          if(this.value == "Select"){
+            this.value = "Drawing";
+            ds.opts.canvas.selection = true;
+          } else {
+            this.value = "Select";
+            ds.preDrawing();
+          }
+        });
+
+        this.opts.canvas.on('mouse:down', function (options) {
+          ds.opts.isMouseDown = true
+          //Setting dashed edges of selected object Begin
+          var selectedObject = ds.opts.canvas.getActiveObject();
+          if (selectedObject){
+            $.each(ds.opts.canvas.getObjects(), function(index, elem){
+              if (elem.id != selectedObject.id){
+                elem.set({strokeDashArray: null});
+              } else {
+                elem.set({strokeDashArray: [4, 4]});
+              }
+            });
+            ds.opts.canvas.renderAll();
+            return;
+          }
+          //Setting dashed edges of selected object End
+
+          if(ds.opts.drawType == "draw_type_poly" || ds.opts.drawType == "draw_type_revrs_poly"){
+            //Complete drawing polygon begin
+            if(options.target && ds.opts.pointArray.length >= 3 && options.target.id == ds.opts.pointArray[0].id){
+              if(ds.opts.drawType == "draw_type_poly"){
+                ds.drawPolygonShape(ds.opts.pointArray);
+              } else {
+                ds.drawPolygonShape(ds.opts.pointArray, true);
+              }
+              return;
+            }
+            //Complete drawing polygon end
+
+            //Add point and line to canvas begin
+            if(!ds.opts.canvas.selection){
+                ds.drawPointAndLine(options);
+            }
+            //Add point and line to canvas end
+          }
+
+          if(ds.opts.drawType == "draw_type_rect" || ds.opts.drawType == "draw_type_revrs_rect") {
+            //Add point to list begin
+            if(!ds.opts.canvas.selection){
+              ds.addPoint(options);
+            }
+            //Add point  to list end
+          }
+
+          if(ds.opts.drawType == "draw_type_line") {
+            //Add point and line to canvas begin
+            if(!ds.opts.canvas.selection){
+              ds.drawLine(options);
+            }
+            //Add point and line to canvas end
+          }
+
+          ds.opts.canvas.renderAll();
+        });
+        this.opts.canvas.on('mouse:up', function (options) {
+          ds.opts.isMouseDown = false;
+
+          //Complete drawing rect begin
+          if(ds.opts.drawType == "draw_type_rect" || ds.opts.drawType == "draw_type_revrs_rect") {
+            if(!ds.opts.canvas.selection) {
+              if(ds.opts.pointArray.length == 1) {
+                if (ds.opts.drawType == "draw_type_rect") {
+                  ds.drawRectangleShape(options);
+                } else{
+                  ds.drawRectangleShape(options, true);
+                }
+              } else {
+                ds.preDrawing();
+              }
+            }
+          }
+          //Complete drawing rect end
+
+          //Complete drawing line begin
+          if(ds.opts.drawType == "draw_type_line") {
+            if(!ds.opts.canvas.selection) {
+              if(ds.opts.lineArray.length == 1) {
+                ds.drawLineShape(options);
+              } else {
+                ds.preDrawing();
+              }
+            }
+          }
+          //Complete drawing line end
+        });
+        this.opts.canvas.on('mouse:move', function (options) {
+          if(ds.opts.drawType == "draw_type_poly" || ds.opts.drawType == "draw_type_revrs_poly"){
+            if(ds.opts.tempLine && ds.opts.tempLine.class == "line"){
+              var pointer = ds.opts.canvas.getPointer(options.e);
+              ds.opts.tempLine.set({ x2: pointer.x, y2: pointer.y });
+            }
+          }
+          if(ds.opts.drawType == "draw_type_line"){
+            if (!ds.opts.isMouseDown) return;
+            if(ds.opts.tempLine && ds.opts.tempLine.class == "line"){
+              var pointer = ds.opts.canvas.getPointer(options.e);
+              ds.opts.tempLine.set({ x2: pointer.x, y2: pointer.y });
+            }
+          }
+          if(ds.opts.drawType == "draw_type_rect" || ds.opts.drawType == "draw_type_revrs_rect") {
+            if (!ds.opts.isMouseDown) return;
+            if(ds.opts.tempRect && ds.opts.pointArray.length == 1){
+              var width = (options.e.layerX/ds.opts.canvas.getZoom()) - ds.opts.pointArray[0].left;
+              var height = (options.e.layerY/ds.opts.canvas.getZoom()) - ds.opts.pointArray[0].top;
+              ds.opts.tempRect.set({
+                left: ds.opts.pointArray[0].left, 
+                top: ds.opts.pointArray[0].top, 
+                width: width, 
+                height: height,
+                strokeWidth: 3,
+                stroke: ds.opts.currentColor,
+                fill: 'rgba(0,0,0,0)',
+                class:'rect',
+              });
+            }
+          }
+          ds.opts.canvas.renderAll();
+        });
+      };
+      this.preDrawing = function() {
+        ds.opts.canvas.selection = false;
+        ds.opts.currentColor = ds.opts.colors[Math.ceil(Math.random() * ds.opts.colors.length)];
+        ds.opts.lineArray = new Array();
+        ds.opts.pointArray = new Array();
+        ds.opts.tempLine = null;
+        ds.opts.tempRect = null;
+      };
+      this.drawLine = function(options) {
+        var pointer = ds.opts.canvas.getPointer(options.e);
+        var points = [pointer.x, pointer.y, pointer.x, pointer.y];
+        var line = new fabric.Line(points, {
+          strokeWidth: 3,
+          fill: ds.opts.currentColor,
+          stroke: ds.opts.currentColor,
+          originX: 'center',
+          originY: 'center',
+          class: "line"
+        });
+        ds.opts.canvas.add(line);
+        ds.opts.lineArray.push(line);
+        ds.opts.tempLine = line;
+      };
+      this.addPoint = function(options) {
+        var random = Math.floor(Math.random() * (ds.opts.max - ds.opts.min + 1)) + ds.opts.min;
+        var id = new Date().getTime() + random;
+        var circlePoint = new fabric.Circle({
+          radius: 5,
+          fill: ds.opts.currentColor,
+          stroke: ds.opts.currentColor,
+          strokeWidth: 1,
+          left: (options.e.layerX/ds.opts.canvas.getZoom()),
+          top: (options.e.layerY/ds.opts.canvas.getZoom()),
+          selectable: false,
+          hasBorders: false,
+          hasControls: false,
+          originX:'center',
+          originY:'center',
+          id:id,
+          objectCaching:false
+        });
+        //add circlePoint but NOT drawing it to canvas
+        ds.opts.pointArray.push(circlePoint);
+
+        var points = [(options.e.layerX/ds.opts.canvas.getZoom()),(options.e.layerY/ds.opts.canvas.getZoom()),(options.e.layerX/ds.opts.canvas.getZoom()),(options.e.layerY/ds.opts.canvas.getZoom())];
+        var square = new fabric.Rect(points, {
+          strokeWidth: 3,
+          stroke: ds.opts.currentColor,
+          fill: 'rgba(0,0,0,0)',
+          class:'rect',
+          selectable: false,
+          hasBorders: false,
+          hasControls: false,
+          evented: false,
+          objectCaching:false
+        });
+        ds.opts.canvas.add(square);
+        ds.opts.tempRect = square;
+      },
+      this.drawRectangleShape = function(options, reverse=false) {
+        ds.opts.canvas.remove(ds.opts.tempRect);
+        var random = Math.floor(Math.random() * (ds.opts.max - ds.opts.min + 1)) + ds.opts.min;
+        var id = new Date().getTime() + random;
+        var width = (options.e.layerX/ds.opts.canvas.getZoom()) - ds.opts.pointArray[0].left;
+        var height = (options.e.layerY/ds.opts.canvas.getZoom()) - ds.opts.pointArray[0].top;
+        var square = new fabric.Rect({
+          left: ds.opts.pointArray[0].left, 
+          top: ds.opts.pointArray[0].top, 
+          width: width,
+          height: height,
+          fill: 'rgba(0,0,0,0)',
+          stroke: ds.opts.currentColor,
+          strokeWidth: 3,
+          hasBorders: false,
+          hasControls: false,
+          id:id,
+          objectCaching:false
+        });
+        if(reverse){
+          square.set({
+            fill: ds.opts.currentColor,
+            opacity: 0.5
+          });
+        }
+        ds.opts.canvas.add(square);
+        ds.opts.shapeArray.push(square);
+        ds.preDrawing();
+      },
+      this.drawLineShape = function(options) {
+        $.each(ds.opts.lineArray, function(index, line){
+          ds.opts.canvas.remove(line);
+        });
+        ds.opts.canvas.remove(ds.opts.tempLine);
+
+        var random = Math.floor(Math.random() * (ds.opts.max - ds.opts.min + 1)) + ds.opts.min;
+        var id = new Date().getTime() + random;
+        var points = [ds.opts.lineArray[0].x1, ds.opts.lineArray[0].y1,(options.e.layerX/ds.opts.canvas.getZoom()),(options.e.layerY/ds.opts.canvas.getZoom())];
+        var line = new fabric.Line(points, {
+          strokeWidth: 3,
+          fill: ds.opts.currentColor,
+          stroke: ds.opts.currentColor,
+          originX: 'center',
+          originY: 'center',
+          id: id,
+          hasBorders: false,
+          hasControls: false,
+          objectCaching:false
+        });
+        ds.opts.canvas.add(line);
+        line.setCoords();
+        ds.opts.shapeArray.push(line);
+        ds.preDrawing();
+      },
+      this.drawPointAndLine = function(options) {
+        var random = Math.floor(Math.random() * (ds.opts.max - ds.opts.min + 1)) + ds.opts.min;
+        var id = new Date().getTime() + random;
+        var circlePoint = new fabric.Circle({
+          radius: 5,
+          fill: ds.opts.currentColor,
+          stroke: ds.opts.currentColor,
+          strokeWidth: 1,
+          left: (options.e.layerX/ds.opts.canvas.getZoom()),
+          top: (options.e.layerY/ds.opts.canvas.getZoom()),
+          selectable: false,
+          hasBorders: false,
+          hasControls: false,
+          originX:'center',
+          originY:'center',
+          id:id,
+          objectCaching:false
+        });
+        var points = [(options.e.layerX/ds.opts.canvas.getZoom()),(options.e.layerY/ds.opts.canvas.getZoom()),(options.e.layerX/ds.opts.canvas.getZoom()),(options.e.layerY/ds.opts.canvas.getZoom())];
+        var line = new fabric.Line(points, {
+          strokeWidth: 3,
+          fill: ds.opts.currentColor,
+          stroke: ds.opts.currentColor,
+          class:'line',
+          originX:'center',
+          originY:'center',
+          selectable: false,
+          hasBorders: false,
+          hasControls: false,
+          evented: false,
+          objectCaching:false
+        });
+        ds.opts.tempLine = line;
+
+        ds.opts.pointArray.push(circlePoint);
+        ds.opts.lineArray.push(line);
+
+        ds.opts.canvas.add(line);
+        ds.opts.canvas.add(circlePoint);
+      },
+      this.drawPolygonShape = function(pointArray, reverse=false) {
+        var points = new Array();
+        $.each(ds.opts.pointArray, function(index, point){
+            points.push({
+                x:point.left,
+                y:point.top
+            });
+            ds.opts.canvas.remove(point);
+        });
+        $.each(ds.opts.lineArray, function(index, line){
+          ds.opts.canvas.remove(line);
+        });
+        ds.opts.canvas.remove(ds.opts.tempLine);
+        var random = Math.floor(Math.random() * (ds.opts.max - ds.opts.min + 1)) + ds.opts.min;
+        var id = new Date().getTime() + random;
+        var polygon = new fabric.Polygon(points, {
+          id: id,
+          stroke: ds.opts.currentColor,
+          strokeWidth: 3,
+          fill: 'rgba(0,0,0,0)',
+          fillRule: "evenodd",
+          hasBorders: false,
+          hasControls: false
+        });
+        if(reverse){
+          polygon.set({
+            fill: ds.opts.currentColor,
+            opacity: 0.5,
+            fillRule: "nonzero",
+          });
+        }
+        ds.opts.canvas.add(polygon);
+        ds.opts.shapeArray.push(polygon);
+        ds.preDrawing();
+      };
+    };
+    
+    ds.initCanvas();
+  </script>
+</body>
+
+</html>
